@@ -1,0 +1,36 @@
+---
+title: "Direct light analysis"
+author: "Mathieu Adgé"
+date: "2026-08-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+rm(list=ls())
+library(tidyverse)
+library(lubridate)
+library(lme4)
+library(lmerTest)
+library(ggplot2)
+library(cowplot)
+library(performance)
+library(cowplot)
+library(nlme)
+library(emmeans)
+library(ggforce)
+library(readxl)
+library(hms)
+library(mgcv)
+library(MuMIn)
+library(ggridges)
+library(gratia)
+```
+
+```{import data}
+data_direct = read.csv("../../data/Light_data.csv") %>% filter(Orientation=="Haut")
+  mutate(across(c(Zone, Period, timepoint, Position,Month), as.factor), datetime=ymd_hms(datetime), hm=hour(datetime) + minute(datetime) / 60, Date = as.Date(Date), facteur=log(facteur)) %>% 
+  filter(Sat_comb=="No_saturation") %>% 
+  distinct(hm,Date,Zone,Position, .keep_all = TRUE)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
