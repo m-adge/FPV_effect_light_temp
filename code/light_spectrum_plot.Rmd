@@ -1,0 +1,100 @@
+---
+title: "Light spectrum plot"
+author: "Mathieu Adgé"
+date: "2026-08-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+rm(list=ls())
+library(tidyverse)
+library(stringr)
+library(purrr)
+library(ggpubr)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+data <- read.csv("../data/Spectrum_data.csv")
+```
+
+
+```{r plot}
+### Fig.9 Visible light spectrum and normalized visible spectrum
+
+zone_labels <- c(
+  "Control" = "Control",
+  "SH51" = "Shade 51%",
+  "SH81" = "Shade 81%",
+  "SH51-UV" = "Shade 51% - UV",
+  "SH81-UV" = "Shade 81% - UV"
+)
+
+data <- data %>% 
+  mutate(Zone = factor(Zone, levels = c("Control", "SH51", "SH51-UV", "SH81", "SH81-UV")), 
+         PAR = as.numeric(PAR), Wavelength = as.numeric(Wavelength)) %>% 
+  filter(Wavelength < 750)
+
+df_norm <- data %>%
+  group_by(Zone) %>%
+  mutate(PAR_norm = PAR / max(PAR, na.rm = TRUE)) %>%
+  ungroup()
+
+p2 <- ggplot(df_norm, aes(Wavelength, PAR_norm, color = Zone)) +
+  geom_line(linewidth = 0.9) +
+  scale_color_manual(values = c("SH51" = "#66C5CCFF", "Control" = "#DCB0F2FF", "SH81" = "#F6CF71FF", 
+                                   "SH51-UV" = "#FE88B1FF", "SH81-UV" = "#5A9E6BFF"),
+                        labels = c("SH51" = "Shade 51%", "SH81" = "Shade 81%", 
+                                   "SH51-UV" = "Shade 51% - UV", "SH81-UV" = "Shade 81% - UV", "Control" = "Control"),
+                        guide = guide_legend(title = NULL))+
+  labs(x = "Wavelength (nm)", y = "Normalized spectrum") +
+        theme_minimal() +
+      theme(
+        legend.text = element_text(size = 16),
+        axis.text.x = element_text(size = 14, vjust=0.5),
+        axis.text.y = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.title.x = element_text(size = 14),
+        strip.placement = "outside",
+        strip.background = element_blank(),
+        strip.text.x = element_text(size = 14, angle = 0, face = "bold"),
+        panel.spacing = unit(0.5, "lines"),
+        legend.position = "none")
+
+p_atten <- ggplot(df_att, aes(Wavelength, T, color = Zone_shade)) +
+  geom_line(linewidth = 1) +
+  labs(x = "Wavelength (nm)", y = "Transmittance: Shade / Control") +
+  facet_wrap(~Zone_shade)+
+          theme_minimal() +
+      theme(
+        legend.text = element_text(size = 16),
+        axis.text.x = element_text(size = 14, vjust=0.5),
+        axis.text.y = element_text(size = 14),
+        axis.title.y = element_text(size = 14),
+        axis.title.x = element_text(size = 14),
+        strip.placement = "outside",
+        strip.background = element_blank(),
+        strip.text.x = element_text(size = 14, angle = 0, face = "bold"),
+        panel.spacing = unit(0.5, "lines"),
+        legend.position = "none")
+
+p_atten
+
+
+leg <- get_legend(p1 + theme(legend.position = "bottom"))
+
+ggarrange(
+  ggarrange(p1, p2, ncol = 2, align = "hv"),
+  leg,
+  ncol = 1,
+  heights = c(1, 0.12)
+)
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
