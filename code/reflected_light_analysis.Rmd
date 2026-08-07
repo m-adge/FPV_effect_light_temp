@@ -1,0 +1,373 @@
+---
+title: "Reflected light analysis"
+author: "Mathieu Adgé"
+date: "2026-08-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+rm(list=ls())
+library(tidyverse)
+library(lubridate)
+library(lme4)
+library(lmerTest)
+library(ggplot2)
+library(cowplot)
+library(performance)
+library(cowplot)
+library(nlme)
+library(emmeans)
+library(ggforce)
+library(mgcv)
+library(MuMIn)
+library(gratia)
+library(ggridges)
+```
+
+
+```{r import data}
+data_refl = read.csv("../data/Reflected_data.csv") %>% filter(Orientation=="Bas") %>% 
+  mutate(across(c(Zone, Period, timepoint, Position, Month), as.factor), datetime=ymd_hms(datetime), hm=hour(datetime) + minute(datetime) / 60, Date = as.Date(Date), facteur = log(facteur)) %>% 
+  filter(Zone != 2) %>% 
+  droplevels() %>% 
+  filter(hour_sunrise > 1 & hour_sunrise<11)
+```
+
+
+
+```{r model selection}
+data_refl <- data_refl %>% 
+  mutate(DateZone = interaction(Date, Zone, drop = TRUE))
+
+M2_gam <- gamm(
+  facteur ~ Zone * Month + s(hour_sunrise, bs="cc",k=8, by=Zone),
+  random      = list(DateZone = ~1),
+  data        = data_refl,
+  method      = "REML"
+)
+
+### Appendix F5. Verification of model assumption for the reflected light model
+gam.check(M2_gam$gam)
+```
+
+```{r}
+M2_gam_corr <- gamm(facteur~Zone*Month+ s(hour_sunrise, bs ="cc", k=8, by = Zone),
+              random= list(DateZone = ~1),
+              data= data_refl, 
+              method="REML")
+
+```
+
+
+```{r model info}
+summary(M2_gam$lme)
+
+summary(M2_gam$gam)
+
+r.squaredGLMM(M2_gam$lme)
+```
+
+```{r}
+emm_Zone    <- emmeans(M2_gam, ~ Zone, data=data_refl)
+
+
+contrast_Zone <- contrast(emm_Zone, method = "pairwise" ,adjust = "tukey")
+
+
+ct_ci <- as.data.frame(confint(contrast_Zone, level=0.95, adjust="tukey"))
+
+facteur_mult_tb = as.data.frame(emm_Zone) %>% 
+  mutate(t = -(lower.CL-emmean)/SE) %>% 
+  summarise(t_mean= mean(t))  
+
+facteur_mult = facteur_mult_tb[[1,1]]
+
+emm_Zone_table <- as.data.frame(emm_Zone) %>% 
+    mutate(across(c(emmean,SE), ~ exp(.))) %>% 
+  mutate(lower.CL = emmean-facteur_mult*SE, 
+         upper.CL = emmean+facteur_mult*SE)
+
+
+ER_max = 0.13
+propagation = sqrt(2*(ER_max^2))
+
+
+con_Zone_table <- as.data.frame(contrast_Zone) %>% 
+  left_join(ct_ci) %>% 
+  mutate(
+    phys_detectable = (lower.CL > propagation) | (upper.CL < -propagation),
+    sign_capteur = if_else(
+      phys_detectable,
+"Difference greater than the instrumental error",
+      "Difference inferior than the instrumental error"
+    ),
+    filtre_sign = as.integer(phys_detectable)
+  )
+```
+```{r}
+### Fig 6. Attenuation coefficient of reflected light under FPV platforms compared to unshaded 
+data_plot_Z <- data_refl %>% 
+  mutate(facteur = exp(facteur)) %>% 
+  left_join(emm_Zone_table) %>% 
+  mutate(Zone = factor(Zone, levels = c("6", "1", "4", "3", "5")), 
+        Zone_name = case_when(Zone == 1 ~ "SH51%", 
+                              Zone == 3 ~ "SH81%", 
+                              Zone == 4 ~ "SH51%-UV", 
+                              .default = "SH81%-UV"), 
+        Position = as.factor(3))
+
+ggplot(data_plot_Z, aes(x = facteur, y = Zone_name, fill=Position)) +
+
+  # Ridgeline = dispersion
+  geom_density_ridges(
+    alpha = 0.6,
+    scale = 0.9,
+    rel_min_height = 0.01, 
+    color= "#636363"
+  ) +
+  
+    # Emmeans : IC
+  geom_errorbar(
+    aes(xmin = lower.CL, xmax = upper.CL),
+    height = 0.1,
+    linewidth = 1,
+    color = "#636363"
+  ) +
+
+  # Emmeans : point
+  geom_point(
+    aes(x = emmean),
+    shape = 21,
+    size = 2,
+    color = "#636363",
+    stroke = 1
+  ) +
+  
+   geom_vline(xintercept = 1,
+             linetype = "dashed", 
+             color = "#636363") + 
+
+  scale_fill_manual(
+  values = c("3" = "#66C5CCFF"),
+  labels = c("3" = "Position = (3,3)"),
+    guide = guide_legend(title = NULL)
+  )  +
+
+
+  xlab("Attenuation coefficient compared to unshaded") +
+  ylab("Floating PV platform") +
+
+  theme_minimal() +
+  theme(
+    legend.text = element_text(size = 12),
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    strip.placement = "outside",
+    strip.background = element_blank(),
+    panel.spacing = unit(0.5, "lines"),
+    legend.position = "bottom"
+  )
+
+```
+
+```{r emmeans Month Zone analysis}
+emm_Month_Zone <- emmeans(M2_gam, ~ Month|Zone, data=data_refl)
+
+
+con_Month_Zone <- contrast(emm_Month_Zone, method = "pairwise" ,adjust = "tukey")
+
+
+ER_max = 0.13
+propagation = sqrt(2*(ER_max^2))
+
+ct_ci <- as.data.frame(confint(con_Month_Zone, level=0.95, adjust="tukey"))
+
+con_MZ_table <- as.data.frame(con_Month_Zone) %>% 
+  left_join(ct_ci) %>% 
+  mutate(
+    phys_detectable = (lower.CL > propagation) | (upper.CL < -propagation),
+    sign_capteur = if_else(
+      phys_detectable,
+"Difference greater than the instrumental error",
+      "Difference inferior than the instrumental error"
+    ),
+    filtre_sign = as.integer(phys_detectable)
+  ) %>% 
+   separate(contrast, into = c("Month1", "Month2"), sep = "\\s-\\s") %>% 
+    mutate(
+    Month1_num = as.numeric(str_extract(Month1, "\\d+")),
+    Month2_num = as.numeric(str_extract(Month2, "\\d+")),
+    Month1_lab = factor(
+      Month1_num,
+      levels = 3:7,
+      labels = c("March", "April", "May", "June",
+        "July")),
+    Month2_lab = factor(
+      Month2_num,
+      levels = 3:7,
+      labels = c("March", "April", "May", "June",
+        "July")),
+    p_num = as.numeric(`p.value`),
+    p_cat = case_when(
+      p_num < 0.001 ~ "p < 0.001",
+      p_num < 0.01  ~ "p < 0.01",
+      p_num < 0.05  ~ "p < 0.05",
+      TRUE          ~ "Statistically non significant"
+    ),
+    phys = if ("phys_detectable" %in% names(.)) phys_detectable else filtre_sign == 1,
+    Zone = factor(Zone, levels = c("1", "4", "3", "5"))
+    )
+
+###Appendix F7. Results of pairwise post-hoc comparisons of monthly reflected light attenuation 
+
+  zone_labels <- c(
+  "1" = "Shade 51%",
+  "4" = "Shade 51% - UV",
+  "3" = "Shade 81%",
+  "5" = "Shade 81% - UV"
+)
+
+months <- sort(unique(c(con_MZ_table$Month1_lab, con_MZ_table$Month2_lab)))
+
+
+
+con_MZ_table$p_cat <- factor(
+  con_MZ_table$p_cat,
+  levels = c("p < 0.001", "p < 0.01", "p < 0.05", "Statistically non significant")
+)
+
+
+ggplot(con_MZ_table, aes(x = Month1_lab, y = Month2_lab)) +
+  geom_tile(aes(fill = p_cat), color = "white", linewidth = 0.25) +
+  geom_point(
+    data = con_MZ_table %>% filter(phys),
+    shape = 4, size = 2, stroke = 1
+  ) +
+  facet_wrap(~Zone, labeller= labeller(Zone=zone_labels)) +
+  scale_fill_manual(
+    name = "p-value",
+    values = c(
+      "p < 0.001" = "#8B0000",
+      "p < 0.01"  = "#E41A1C",
+      "p < 0.05"  = "#FDB863",
+      "Statistically non significant" = "grey85"
+    ),
+    na.value = "grey95"
+  ) +
+  coord_equal() +
+  labs(
+    x = NULL, y = NULL,
+    caption = "Crosses indicate physically significant differences (above instrumental uncertainty)."
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(face = "bold"), 
+    plot.caption = element_text(hjust = 0.5)
+  )
+```
+
+```{r}
+### Appendix F6. Results of pairwise post-hoc comparisons of hourly reflected light attenuation 
+
+# We construct the reference grid by fixing only the tim
+rg <- ref_grid(M2_gam,
+               at = list(hour_sunrise = seq(2, 10, by = 1)),
+               data=data_refl)  # par ex.
+
+
+emm_zone_hour <- emmeans(rg, ~ hour_sunrise | Zone)
+
+con_zone_hour <- contrast(emm_zone_hour, method = "pairwise", adjust = "tukey")
+
+
+ER_max = 0.13
+propagation = sqrt(2*(ER_max^2))
+
+ct_ci <- as.data.frame(confint(con_zone_hour, level=0.95, adjust="tukey"))
+
+con_ZH_table <- as.data.frame(con_zone_hour) %>% 
+  left_join(ct_ci) %>% 
+  mutate(
+    phys_detectable = (lower.CL > propagation) | (upper.CL < -propagation),
+    sign_capteur = if_else(
+      phys_detectable,
+"Difference greater than the instrumental error",
+      "Difference inferior than the instrumental error"
+    ),
+    filtre_sign = as.integer(phys_detectable)
+  ) %>% 
+    separate(contrast, into = c("h1", "h2"), sep = "\\s-\\s") %>% 
+    mutate(
+    h1_num = as.numeric(str_extract(h1, "\\d+")),
+    h2_num = as.numeric(str_extract(h2, "\\d+")),
+    p_num = as.numeric(`p.value`),
+    p_cat = case_when(
+      p_num < 0.001 ~ "p < 0.001",
+      p_num < 0.01  ~ "p < 0.01",
+      p_num < 0.05  ~ "p < 0.05",
+      TRUE          ~ "Statistically non significant"
+    ),
+    phys = if ("phys_detectable" %in% names(.)) phys_detectable else filtre_sign == 1,
+    Zone = factor(Zone, levels = c("1", "4", "3", "5"))
+  )
+
+con_ZH_table_lab <- con_ZH_table %>% 
+  filter(phys) %>% 
+  mutate(lab= round(exp(estimate),2)) %>% 
+  mutate(lab = case_when(h2_num == 11 ~ round(1/lab,2), 
+                         .default = lab))
+
+  zone_labels <- c(
+  "1" = "Shade 51%",
+  "4" = "Shade 51% - UV",
+  "3" = "Shade 81%",
+  "5" = "Shade 81% - UV"
+)
+
+hours <- sort(unique(c(con_ZH_table$h1_num, con_ZH_table$h2_num)))
+
+
+con_ZH_table$p_cat <- factor(
+  con_ZH_table$p_cat,
+  levels = c("p < 0.001", "p < 0.01", "p < 0.05", "Statistically non significant")
+)
+
+ggplot(con_ZH_table, aes(x = h1_num, y = h2_num)) +
+  geom_tile(aes(fill = p_cat), color = "white", linewidth = 0.25) +
+  geom_point(
+    data = con_ZH_table %>% filter(phys),
+    shape = 4, size = 2, stroke = 1
+  ) +
+  facet_wrap(~Zone, labeller= labeller(Zone=zone_labels)) +
+  scale_fill_manual(
+    name = "p-value",
+    values = c(
+      "p < 0.001" = "#8B0000",
+      "p < 0.01"  = "#E41A1C",
+      "p < 0.05"   = "#FDB863",
+      "Statistically non significant"             = "grey85"
+    )) +
+  coord_equal() +
+  labs(
+    x = "Hour after sunrise",
+    y = "Hour after sunrise",
+    caption = "Crosses indicate differences exceeding instrumental uncertainty (physically significant)."
+  ) +
+  scale_x_continuous(
+  breaks = sort(unique(con_ZH_table$h1_num)),
+  labels = function(x) as.integer(x)
+) +
+scale_y_continuous(
+  breaks = sort(unique(con_ZH_table$h2_num)),
+  labels = function(x) as.integer(x)
+) +
+  theme_minimal(base_size = 11) +
+  theme(
+    panel.grid = element_blank(),,
+    strip.text = element_text(face = "bold"),
+    plot.caption = element_text(hjust = 0.5))
+```
