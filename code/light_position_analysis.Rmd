@@ -92,18 +92,18 @@ emm_table_norm <- as.data.frame(emm_table) %>%
 
 ### Fig 4. Marginal mean attenuation coefficient of direct light under SH81 compared to the marginal mean attenuation coefficient at different positon 
 
-# Séparation position 4.5 vs autres
+
 emm_table_norm_ref  <- emm_table_norm %>% filter(Position == 4.5)
 emm_table_norm_spat <- emm_table_norm %>% filter(Position != 4.5)
 
-# Forcer Position en facteur (ordre croissant)
+
 emm_table_norm_spat <- emm_table_norm_spat %>%
   mutate(Position = factor(Position, levels = sort(unique(Position))))
 
-# Plot
+
 ggplot() +
 
-  # Rectangle IC95% de la position 4.5 sur toute la largeur
+
   annotate(
     "rect",
     xmin = -Inf, xmax = Inf,
@@ -113,14 +113,14 @@ ggplot() +
     alpha = 0.5
   ) +
 
-  # Points pour les positions spatiales
+
   geom_point(
     data = emm_table_norm_spat,
     aes(x = Position, y = emmean),
     size = 3
   ) +
 
-  # IC95% pour les positions spatiales
+
   geom_errorbar(
     data = emm_table_norm_spat,
     aes(x = Position, ymin = lower.CL, ymax = upper.CL),
@@ -274,5 +274,385 @@ ggplot(df, aes(x = factor(Position1_num), y = factor(Position2_num))) +
     axis.text.x = element_text(angle = 45, hjust = 1),
     strip.text = element_text(face = "bold"), 
   )
+```
+Reflected light analysis 
+
+```{r}
+### SH51
+data_Z1_ref<- data %>% 
+  filter(Zone==1 & Orientation == "Bas") %>% 
+  mutate(facteur=log(facteur)) %>% 
+  filter(PAR!=12)
+```
+
+```{r}
+f1 <- formula(facteur~ Position)
+M1<-gls(facteur~Position,method="REML", data = data_Z1_ref)
+```
+
+
+```{r}
+res <- residuals(M1, type="normalized")
+    fitted <- fitted(M1)
+  resfit <- data_Z1_ref %>% 
+    mutate(res_log= res , fitted_log=fitted)
+  
+           p_hist <-    ggplot(resfit, aes(x = res_log)) +
+                geom_histogram(bins = 50,
+                               fill = "lightblue", color = "black")+
+                labs(title = "Histogramme des residus")
+           p_qq <-    ggplot(resfit, aes(sample = res_log)) +
+                stat_qq() +
+                stat_qq_line()+
+                labs(title = "Normal Q-Q Plot")
+           p_fit <-   ggplot(resfit, aes(y = res_log, x = fitted_log)) +
+                geom_point()+
+                labs(title = "Valeurs ajustees")
+           p_res_pos <-     ggplot(resfit, aes(y = res_log, x = Position, fill= Position)) +
+                geom_boxplot()
+              
+     p_diag <- (p_hist | p_qq) / (p_fit | p_res_pos)
+p_diag
+```
+
+```{r}
+summary(M1)
+
+r.squaredLR(M1)
+```
+
+```{r}
+emm_Position    <- emmeans(M1,~ Position, mode = "appx-satterthwaite")
+
+con_Position <- contrast(emm_Position, method = "pairwise" ,adjust = "tukey")
+
+ct_ci <- as.data.frame(confint(con_Position, level=0.95, adjust="tukey"))
+
+ER_max = 0.13
+propagation = sqrt(2*(ER_max^2))
+
+
+con_Pos_table_Z1 <- as.data.frame(con_Position) %>% 
+  left_join(ct_ci) %>% 
+  mutate(
+    phys_detectable = (lower.CL > propagation) | (upper.CL < -propagation),
+    sign_capteur = if_else(
+      phys_detectable,
+"Difference greater than the instrumental error",
+      "Difference inferior than the instrumental error"
+    ),
+    filtre_sign = as.integer(phys_detectable)
+  ) %>% 
+  mutate(Zone=1)
+
+```
+Aucune position n'a une différence significative stastiquement et physiquement
+
+### Z3 
+
+```{r}
+data_Z3_ref<- data %>% 
+  filter(Zone==3 & Orientation == "Bas") %>% 
+  mutate(facteur=log(facteur)) %>% 
+  filter(PAR !=12)
+```
+
+```{r}
+M2 <- gls(
+  facteur ~ Position,
+  correlation = corCAR1(form = ~ hm|Position),
+  data = data_Z3_ref,
+  method = "REML"
+)
+```
+
+```{r}
+res <- residuals(M2, type="normalized")
+    fitted <- fitted(M2)
+  resfit <- data_Z3_ref %>% 
+    mutate(res_log= res , fitted_log=fitted)
+  
+           p_hist <-    ggplot(resfit, aes(x = res_log)) +
+                geom_histogram(bins = 50,
+                               fill = "lightblue", color = "black")+
+                labs(title = "Histogramme des residus")
+           p_qq <-    ggplot(resfit, aes(sample = res_log)) +
+                stat_qq() +
+                stat_qq_line()+
+                labs(title = "Normal Q-Q Plot")
+           p_fit <-   ggplot(resfit, aes(y = res_log, x = fitted_log)) +
+                geom_point()+
+                labs(title = "Valeurs ajustees")
+           p_res_pos <-     ggplot(resfit, aes(y = res_log, x = Position, fill= Position)) +
+                geom_boxplot()
+              
+     p_diag <- (p_hist | p_qq) / (p_fit | p_res_pos)
+p_diag
+```
+
+```{r}
+summary(M2)
+
+r.squaredLR(M2)
+```
+
+```{r}
+emm_Position    <- emmeans(M2,~ Position, mode = "appx-satterthwaite")
+
+con_Position <- contrast(emm_Position, method = "pairwise" ,adjust = "tukey")
+
+ct_ci <- as.data.frame(confint(con_Position, level=0.95, adjust="tukey"))
+
+ER_max = 0.13
+propagation = sqrt(2*(ER_max^2))
+
+
+con_Pos_table_Z3 <- as.data.frame(con_Position) %>% 
+  left_join(ct_ci) %>% 
+  mutate(
+    phys_detectable = (lower.CL > propagation) | (upper.CL < -propagation),
+    sign_capteur = if_else(
+      phys_detectable,
+"Difference greater than the instrumental error",
+      "Difference inferior than the instrumental error"
+    ),
+    filtre_sign = as.integer(phys_detectable),
+    Zone = 3
+  )
+
+```
+
+### Z4 
+
+```{r}
+data_Z4_ref<- data %>% 
+  filter(Zone==4 & Orientation == "Bas") %>% 
+  mutate(facteur=log(facteur)) %>% 
+  filter(PAR !=12)
+
+```
+
+
+```{r}
+M3 <- gls(
+  facteur~Position,
+  weights = varIdent(form=~1|Position),
+  data = data_Z4_ref,
+  method = "REML"
+)
+
+summary(M3)
+
+r.squaredLR(M3)
+```
+
+```{r}
+res <- residuals(M3, type="normalized")
+    fitted <- fitted(M3)
+  resfit <- data_Z4_ref %>% 
+    mutate(res_log= res , fitted_log=fitted)
+  
+           p_hist <-    ggplot(resfit, aes(x = res_log)) +
+                geom_histogram(bins = 50,
+                               fill = "lightblue", color = "black")+
+                labs(title = "Histogramme des residus")
+           p_qq <-    ggplot(resfit, aes(sample = res_log)) +
+                stat_qq() +
+                stat_qq_line()+
+                labs(title = "Normal Q-Q Plot")
+           p_fit <-   ggplot(resfit, aes(y = res_log, x = fitted_log)) +
+                geom_point()+
+                labs(title = "Valeurs ajustees")
+           p_res_pos <-     ggplot(resfit, aes(y = res_log, x = Position, fill= Position)) +
+                geom_boxplot()
+              
+     p_diag <- (p_hist | p_qq) / (p_fit | p_res_pos)
+p_diag
+```
+
+```{r}
+emm_Position    <- emmeans(M3,~ Position, mode = "appx-satterthwaite")
+
+con_Position <- contrast(emm_Position, method = "pairwise" ,adjust = "tukey")
+
+ct_ci <- as.data.frame(confint(con_Position, level=0.95, adjust="tukey"))
+
+ER_max = 0.13
+propagation = sqrt(2*(ER_max^2))
+
+
+con_Pos_table_Z4 <- as.data.frame(con_Position) %>% 
+  left_join(ct_ci) %>% 
+  mutate(
+    phys_detectable = (lower.CL > propagation) | (upper.CL < -propagation),
+    sign_capteur = if_else(
+      phys_detectable,
+"Difference greater than the instrumental error",
+      "Difference inferior than the instrumental error"
+    ),
+    filtre_sign = as.integer(phys_detectable),
+    Zone=4
+  )
+
+```
+
+### Z5 
+
+```{r}
+data_Z5_ref<- data %>% 
+  filter(Zone==5 & Orientation == "Bas") %>% 
+  mutate(facteur=log(facteur)) %>% 
+  filter(!PAR %in% c(5,12))
+
+M1<-gls(facteur~Position,method="REML", data = data_Z5_ref)
+```
+
+
+
+
+```{r}
+res <- residuals(M1, type="normalized")
+    fitted <- fitted(M1)
+  resfit <- data_Z5_ref %>% 
+    mutate(res_log= res , fitted_log=fitted)
+  
+           p_hist <-    ggplot(resfit, aes(x = res_log)) +
+                geom_histogram(bins = 50,
+                               fill = "lightblue", color = "black")+
+                labs(title = "Histogramme des residus")
+           p_qq <-    ggplot(resfit, aes(sample = res_log)) +
+                stat_qq() +
+                stat_qq_line()+
+                labs(title = "Normal Q-Q Plot")
+           p_fit <-   ggplot(resfit, aes(y = res_log, x = fitted_log)) +
+                geom_point()+
+                labs(title = "Valeurs ajustees")
+           p_res_pos <-     ggplot(resfit, aes(y = res_log, x = Position, fill= Position)) +
+                geom_boxplot()
+              
+     p_diag <- (p_hist | p_qq) / (p_fit | p_res_pos)
+p_diag
+```
+
+```{r}
+summary(M1)
+
+r.squaredLR(M1)
+```
+
+```{r}
+emm_Position    <- emmeans(M1,~ Position, mode = "appx-satterthwaite")
+
+con_Position <- contrast(emm_Position, method = "pairwise" ,adjust = "tukey")
+
+ct_ci <- as.data.frame(confint(con_Position, level=0.95, adjust="tukey"))
+
+ER_max = 0.13
+propagation = sqrt(2*(ER_max^2))
+
+
+con_Pos_table_Z5 <- as.data.frame(con_Position) %>% 
+  left_join(ct_ci) %>% 
+  mutate(
+    phys_detectable = (lower.CL > propagation) | (upper.CL < -propagation),
+    sign_capteur = if_else(
+      phys_detectable,
+"Difference greater than the instrumental error",
+      "Difference inferior than the instrumental error"
+    ),
+    filtre_sign = as.integer(phys_detectable), 
+    Zone=5
+  )
+
+```
+
+```{r}
+### Fig.7 Results of pairwise post-hoc comparisons of reflected light attenuation factor
+
+plot_signi = function(table, r_squared, freedom, phi=NA){
+  zone_labels <- c(
+  "1" = "Shade 51%",
+  "4" = "Shade 51% - UV",
+  "3" = "Shade 81%",
+  "5" = "Shade 81% - UV"
+)
+  df <- table %>% 
+  separate(contrast, into = c("Position1", "Position2"), sep = "\\s-\\s") %>% 
+    mutate(
+    Position1_num = as.numeric(str_extract(Position1, "\\d+")),
+    Position2_num = as.numeric(str_extract(Position2, "\\d+")),
+    p_num = as.numeric(`p.value`),
+    p_cat = case_when(
+      p_num < 0.001 ~ "p < 0.001",
+      p_num < 0.01  ~ "p < 0.01",
+      p_num < 0.05  ~ "p < 0.05",
+      TRUE          ~ "Statistically non significant"
+    ),
+    phys = if ("phys_detectable" %in% names(.)) phys_detectable else filtre_sign == 1,
+    )
+
+position <- sort(unique(c(df$Position1, df$Position2)))
+
+
+
+df$p_cat <- factor(
+  df$p_cat,
+  levels = c("p < 0.001", "p < 0.01", "p < 0.05", "Statistically non significant")
+)
+
+if(is.na(phi)==T){
+  caption = paste("R² =", r_squared, "df =", freedom)
+}else{
+  caption = paste("R² =", r_squared, "df =", freedom, "Φ =", phi)
+}
+
+
+plot <- ggplot(df, aes(x = factor(Position1_num), y = factor(Position2_num))) +
+  geom_tile(aes(fill = p_cat), color = "white", linewidth = 0.25) +
+  geom_point(
+    data = df %>% filter(phys),
+    shape = 4, size = 2, stroke = 1
+  ) +
+  scale_fill_manual(
+    name = "p-value",
+    values = c(
+      "p < 0.001" = "#8B0000",
+      "p < 0.01"  = "#E41A1C",
+      "p < 0.05"  = "#FDB863",
+      "Statistically non significant" = "grey85"
+    ),
+    na.value = "grey95"
+  ) +
+  facet_wrap(~Zone, labeller= labeller(Zone=zone_labels)) +
+  coord_equal() +
+  labs(
+    x = NULL, y = NULL,
+    caption = caption
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(face = "bold"), 
+    plot.caption = element_text(hjust = 0.5)
+  )
+
+return(plot)
+}
+```
+
+```{r}
+p1 <- plot_signi(con_Pos_table_Z1, r_squared = 0.13, freedom = 162)+
+  theme(legend.position = "none")
+p3  <-plot_signi(con_Pos_table_Z3, r_squared = 0.78, phi = 0.38, freedom =192)+
+theme(legend.position = "none")
+p4 <- plot_signi(con_Pos_table_Z4, r_squared = 0.37, freedom = 218)
+p5 <- plot_signi(con_Pos_table_Z5, r_squared = 0.27, freedom = 160)+
+  theme(legend.position = "none")
+
+     p <- (p1 | p4) / (p3 | p5) + 
+       plot_layout(guides = "collect")
+p
+
 ```
 
