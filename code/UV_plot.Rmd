@@ -1,0 +1,92 @@
+---
+title: "UV plot"
+author: "Mathieu Adgé"
+date: "2026-08-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+rm(list=ls())
+library(tidyverse)
+library(readxl)
+library(ggforce)
+```
+
+```{r import data}
+UV_data <- read.csv("../data/UV_data.csv") %>% 
+    mutate(Zone = factor(Zone, levels = c("2", "1", "4", "3", "5"))) 
+```
+
+
+```{r plot}
+# Fig. 8 Depth profile of UVA and UVB depending on light condition
+
+ggplot(UV_data, aes(x = mean_UVA, y = Profondeur, color = Zone, fill=Zone)) +
+      geom_point(aes(x =UVA,fill=Zone), shape = 21, size = 1.5) +
+      geom_line(aes(group = Zone), linewidth = 1.2, lineend = "round") +
+
+     scale_color_manual(values = c("1" = "#66C5CCFF", "2" = "#DCB0F2FF", "3" = "#F6CF71FF", 
+                                   "4" = "#FE88B1FF", "5" = "#5A9E6BFF", "6" = "#F89C74FF"),
+                        labels = c("1" = "Shade 51%", "3" = "Shade 81%", 
+                                   "4" = "Shade 51% - UV", "5" = "Shade 81% - UV", "2" = "Control"),
+                        guide = guide_legend(title = NULL))+
+      scale_fill_manual(values = c("1" = "#66C5CCFF", "2" = "#DCB0F2FF", "3" = "#F6CF71FF", 
+                                   "4" = "#FE88B1FF", "5" = "#5A9E6BFF", "6" = "#F89C74FF"),
+                        labels = c("1" = "Shade 51%", "3" = "Shade 81%", 
+                                   "4" = "Shade 51% - UV", "5" = "Shade 81% - UV", "2" = "Control"),
+                        guide = guide_legend(title = NULL)) +
+      scale_y_reverse()+
+      scale_x_continuous(position="top")+
+      xlab("UVA (W/m²)") +
+      ylab("Depth (m)") +
+      ggtitle("") +
+      theme_minimal() +
+      theme(
+        legend.text = element_text(size = 16),
+        axis.text.x = element_text(size = 14, vjust=0.5),
+        axis.text.y = element_text(size = 14),
+        axis.title.y = element_text(size = 18),
+        axis.title.x.top = element_text(size = 18, margin = margin(b = 10)),
+        strip.placement = "outside",
+        strip.background = element_blank(),
+        strip.text.x = element_text(size = 14, angle = 0, face = "bold"),
+        panel.spacing = unit(0.5, "lines"),
+        legend.position = "bottom")
+
+
+
+ggplot(UV_data, aes(x = mean_UVB, y = Profondeur, color = Zone, fill=Zone)) +
+      geom_point(aes(x =UVB,fill=Zone), shape = 21, size = 1.5) +
+      geom_line(aes(group = Zone), linewidth = 1.2, lineend = "round") +
+
+     scale_color_manual(values = c("1" = "#66C5CCFF", "2" = "#DCB0F2FF", "3" = "#F6CF71FF", 
+                                   "4" = "#FE88B1FF", "5" = "#5A9E6BFF", "6" = "#F89C74FF"),
+                        labels = c("1" = "Shade 51%", "3" = "Shade 81%", 
+                                   "4" = "Shade 51% - UV", "5" = "Shade 81% - UV", "2" = "Control"),
+                        guide = guide_legend(title = NULL))+
+      scale_fill_manual(values = c("1" = "#66C5CCFF", "2" = "#DCB0F2FF", "3" = "#F6CF71FF", 
+                                   "4" = "#FE88B1FF", "5" = "#5A9E6BFF", "6" = "#F89C74FF"),
+                        labels = c("1" = "Shade 51%", "3" = "Shade 81%", 
+                                   "4" = "Shade 51% - UV", "5" = "Shade 81% - UV", "2" = "Control"),
+                        guide = guide_legend(title = NULL)) +
+      scale_y_reverse()+
+      scale_x_continuous(position="top")+
+      xlab("UVB (W/m²") +
+      ylab("Depth (m)") +
+      ggtitle("") +
+      theme_minimal() +
+      theme(
+        legend.text = element_text(size = 16),
+        axis.text.x = element_text(size = 14, vjust=0.5),
+        axis.text.y = element_text(size = 14),
+        axis.title.y = element_text(size = 18),
+        axis.title.x.top = element_text(size = 18, margin = margin(b = 10)),
+        strip.placement = "outside",
+        strip.background = element_blank(),
+        strip.text.x = element_text(size = 14, angle = 0, face = "bold"),
+        panel.spacing = unit(0.5, "lines"),
+        legend.position = "bottom")
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
