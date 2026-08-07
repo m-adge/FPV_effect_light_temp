@@ -1,0 +1,278 @@
+---
+title: "PAR Position"
+author: "Mathieu Adgé"
+date: "2026-08-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+rm(list=ls())
+library(tidyverse)
+library(nlme)
+library(MuMIn)
+library(patchwork)
+library(emmeans)
+library(performance)
+```
+
+
+```{r import data}
+data <- read.csv("../data/Light_position.csv") %>% 
+  filter(Sat_2==0) %>% 
+   mutate(across(c(Zone,Position,Orientation), as.factor), datetime=ymd_hms(datetime), hm=hour(datetime) + minute(datetime) / 60, Date = as.Date(day)) 
+```
+
+We study the SH81 platform to see if the extreme value obtained for position (4.5,4.5) is common with values in other positions under the plateform 
+
+```{r model}
+data_Z3<- data %>% 
+  filter(Zone==3 & Orientation == "Haut") %>% 
+  mutate(facteur=log(facteur))
+
+M2 <- gls(
+  facteur ~ Position,
+  correlation = corCAR1(form = ~ hm|Position),
+  data = data_Z3,
+  method = "REML"
+)
+```
+
+```{r model info}
+summary(M2)
+
+acf(resid(M2, type="normalized"), lag.max = 36, main = "ACF")
+```
+
+```{r visual check on model residuals}
+res <- residuals(M2, type="normalized")
+    fitted <- fitted(M2)
+  resfit <- data_Z3 %>% 
+    mutate(res_log= res , fitted_log=fitted)
+  
+           p_hist <-    ggplot(resfit, aes(x = res_log)) +
+                geom_histogram(bins = 50,
+                               fill = "lightblue", color = "black")+
+                labs(title = "")
+           p_qq <-    ggplot(resfit, aes(sample = res_log)) +
+                stat_qq() +
+                stat_qq_line()+
+                labs(title = "Normal Q-Q Plot")
+           p_fit <-   ggplot(resfit, aes(y = res_log, x = fitted_log)) +
+                geom_point()+
+                labs(title = "")
+           p_res_pos <-     ggplot(resfit, aes(y = res_log, x = Position, fill= Position)) +
+                geom_boxplot()
+              
+     p_diag <- (p_hist | p_qq) / (p_fit | p_res_pos)
+p_diag
+
+```
+
+```{r}
+emm_Position    <- emmeans(M2,~ Position, mode = "appx-satterthwaite")
+print(emm_Position)
+
+emm_table <- as.data.frame(emm_Position)
+
+
+facteur_mult_tb = emm_table %>% 
+  mutate(t = -(lower.CL-emmean)/SE) %>% 
+  summarise(t_mean= mean(t)) 
+
+facteur_mult = facteur_mult_tb[[1,1]]
+
+ER_max = 0.13
+propagation = sqrt(2*(ER_max^2))
+
+emm_table_norm <- as.data.frame(emm_table) %>% 
+    mutate(across(c(emmean,SE), ~ exp(.))) %>% 
+  mutate(lower.CL = emmean-facteur_mult*sqrt((SE^2)+(propagation^2)), 
+         upper.CL = emmean+facteur_mult*sqrt((SE^2)+(propagation^2))) %>% 
+  add_row(Position = as.factor(4.5), emmean = 18, SE =1.01, df =NA , lower.CL = 15.98 , upper.CL = 20.02)
+
+### Fig 4. Marginal mean attenuation coefficient of direct light under SH81 compared to the marginal mean attenuation coefficient at different positon 
+
+# Séparation position 4.5 vs autres
+emm_table_norm_ref  <- emm_table_norm %>% filter(Position == 4.5)
+emm_table_norm_spat <- emm_table_norm %>% filter(Position != 4.5)
+
+# Forcer Position en facteur (ordre croissant)
+emm_table_norm_spat <- emm_table_norm_spat %>%
+  mutate(Position = factor(Position, levels = sort(unique(Position))))
+
+# Plot
+ggplot() +
+
+  # Rectangle IC95% de la position 4.5 sur toute la largeur
+  annotate(
+    "rect",
+    xmin = -Inf, xmax = Inf,
+    ymin = emm_table_norm_ref$lower.CL,
+    ymax = emm_table_norm_ref$upper.CL,
+    fill = "#DCB0F2FF",
+    alpha = 0.5
+  ) +
+
+  # Points pour les positions spatiales
+  geom_point(
+    data = emm_table_norm_spat,
+    aes(x = Position, y = emmean),
+    size = 3
+  ) +
+
+  # IC95% pour les positions spatiales
+  geom_errorbar(
+    data = emm_table_norm_spat,
+    aes(x = Position, ymin = lower.CL, ymax = upper.CL),
+    width = 0.15,
+    linewidth = 0.8
+  ) +
+
+  labs(
+    x = "Position",
+    y = "Estimated marginal mean",
+    caption = "The rectangle represents the 95% CI for position 4.5 in direct light factor attenuation timeserie model"
+  ) +
+
+  theme_minimal() +
+  theme(
+        legend.text = element_text(size = 12),
+    axis.text.x = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 14),
+    strip.placement = "outside",
+    strip.background = element_blank(),
+    panel.spacing = unit(0.5, "lines"),
+    legend.position = "bottom",
+    plot.caption = element_text(hjust = 0.5)
+  )
+```
+We study the SH81-UV platform to see if the different values obtained for position (3,3) and (4.5,4.5) is common with values in other positions under the plateform 
+
+
+```{r data selection}
+data_Z5<- data %>% 
+  filter(Zone==5 & Orientation == "Haut") %>% 
+  mutate(facteur=log(facteur))
+```
+
+```{r model selection}
+M3 <- gls(
+  facteur~Position,
+  weights = varIdent(form=~1|Position),
+  data = data_Z5,
+  method = "REML"
+)
+```
+
+```{r model info}
+summary(M3) 
+
+acf(resid(M3, type="normalized"), lag.max = 36, main = "ACF")
+
+r.squaredLR(M3)
+```
+
+```{r visual check on model residuals}
+res <- residuals(M3, type="normalized")
+    fitted <- fitted(M3)
+  resfit <- data_Z5 %>% 
+    mutate(res_log= res , fitted_log=fitted)
+  
+           p_hist <-    ggplot(resfit, aes(x = res_log)) +
+                geom_histogram(bins = 50,
+                               fill = "lightblue", color = "black")+
+                labs(title = "Histogramme des residus")
+           p_qq <-    ggplot(resfit, aes(sample = res_log)) +
+                stat_qq() +
+                stat_qq_line()+
+                labs(title = "Normal Q-Q Plot")
+           p_fit <-   ggplot(resfit, aes(y = res_log, x = fitted_log)) +
+                geom_point()+
+                labs(title = "Valeurs ajustees")
+           p_res_pos <-     ggplot(resfit, aes(y = res_log, x = Position, fill= Position)) +
+                geom_boxplot()
+              
+     p_diag <- (p_hist | p_qq) / (p_fit | p_res_pos)
+p_diag
+```
+
+```{r}
+emm_Position    <- emmeans(M3,~ Position, mode = "appx-satterthwaite")
+print(emm_Position)
+
+con_Position <- contrast(emm_Position, method = "pairwise" ,adjust = "tukey")
+print(con_Position)
+
+ct_ci <- as.data.frame(confint(con_Position, level=0.95, adjust="tukey"))
+
+ER_max = 0.13
+propagation = sqrt(2*(ER_max^2))
+
+
+con_Pos_table <- as.data.frame(con_Position) %>% 
+  left_join(ct_ci) %>% 
+  mutate(
+    phys_detectable = (lower.CL > propagation) | (upper.CL < -propagation),
+    sign_capteur = if_else(
+      phys_detectable,
+"Difference greater than the instrumental error",
+      "Difference inferior than the instrumental error"
+    ),
+    filtre_sign = as.integer(phys_detectable)
+  )
+
+df <- con_Pos_table %>% 
+  separate(contrast, into = c("Position1", "Position2"), sep = "\\s-\\s") %>% 
+    mutate(
+    Position1_num = as.numeric(str_extract(Position1, "\\d+")),
+    Position2_num = as.numeric(str_extract(Position2, "\\d+")),
+    p_num = as.numeric(`p.value`),
+    p_cat = case_when(
+      p_num < 0.001 ~ "p < 0.001",
+      p_num < 0.01  ~ "p < 0.01",
+      p_num < 0.05  ~ "p < 0.05",
+      TRUE          ~ "Statistically non significant"
+    ),
+    phys = if ("phys_detectable" %in% names(.)) phys_detectable else filtre_sign == 1,)
+
+    
+position <- sort(unique(c(con_Pos_table$Position1, df$Position2)))
+
+df$p_cat <- factor(
+  df$p_cat,
+  levels = c("p < 0.001", "p < 0.01", "p < 0.05", "Statistically non significant")
+)
+
+
+
+### Fig.5 Results of pairwise post-hoc comparisons of direct light attenuation at different positions for the SH81-UV platform 
+ggplot(df, aes(x = factor(Position1_num), y = factor(Position2_num))) +
+  geom_tile(aes(fill = p_cat), color = "white", linewidth = 0.25) +
+  geom_point(
+    data = df %>% filter(phys),
+    shape = 4, size = 2, stroke = 1
+  ) +
+  scale_fill_manual(
+    name = "p-value",
+    values = c(
+      "p < 0.001" = "#8B0000",
+      "p < 0.01"  = "#E41A1C",
+      "p < 0.05"  = "#FDB863",
+      "Statistically non significant" = "grey85"
+    ),
+    na.value = "grey95"
+  ) +
+  coord_equal() +
+  labs(
+    x = NULL, y = NULL,
+  ) +
+  theme_minimal(base_size = 11) +
+  theme(
+    panel.grid = element_blank(),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(face = "bold"), 
+  )
+```
+
