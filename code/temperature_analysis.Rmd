@@ -1,0 +1,85 @@
+---
+title: "Water temperature analysis"
+author: "Mathieu Adgé"
+date: "2026-08-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+rm(list=ls())
+library(tidyverse)
+library(rsq)
+library(nlme)
+library(performance)
+library(emmeans)
+library(patchwork)
+```
+
+
+```{r import data}
+data = read.csv("../data/Temp_data.csv") %>% 
+  mutate(across(c(Zone, Period, timepoint, Position, Month), as.factor), datetime=ymd_hms(datetime), Date = as.Date(Date),
+         Zone = case_when(Zone == 2 ~ "Control",
+                          Zone == 1 ~ "SH51%",
+                          Zone ==4~ "SH51%-UV",
+                          Zone==3~ "SH81%",
+                          Zone==5~ "SH81%-UV"), 
+         Zone = factor(Zone, levels = c("Control", "SH51%", "SH51%-UV", "SH81%", "SH81%-UV")))  %>% 
+  group_by(Date,Zone,Position) %>% 
+  summarise(Tp_day = mean(Temp)) %>% 
+  ungroup() %>%  
+  mutate(Month = month(Date), 
+    Month_name = factor(lubridate::month(Date,
+                                              label = TRUE, abbr = FALSE,
+                                              locale = "en_US")), 
+    Period = case_when(between(Month,5,10) ~ "Saison_fraiche",
+                       .default = "Saison_chaude"), 
+    Month = factor(Month))
+```
+
+```{r model}
+f1 <- formula(Tp_day~ Zone*Month + Zone*Position)
+
+M5 <- lme(f1, random =~1 | Date/Zone, data = data, method="REML")
+```
+
+```{r}
+### Appendix F8. Verification of model assumptions for daily temperature model 
+
+ res <- residuals(M5, type="normalized")
+    fitted <- fitted(M5)
+  resfit <- data %>% 
+    mutate(res_log= res , fitted_log=fitted)
+  
+            p_hist <-  ggplot(resfit, aes(x = res_log)) +
+                geom_histogram(bins = 50,
+                               fill = "lightblue", color = "black")+
+                labs(title = "Residual histogram")
+           p_qq <-    ggplot(resfit, aes(sample = res_log)) +
+                stat_qq() +
+                stat_qq_line()+
+                labs(title = "Normal Q-Q Plot")
+          p_fit <- ggplot(resfit, aes(y = res_log, x = fitted_log)) +
+                geom_point()+
+                labs(title = "Standard residuals vs fitted values")
+              ggplot(resfit, aes(y = res_log, x = Month, fill= Month)) +
+                geom_boxplot()
+              ggplot(resfit, aes(y=res_log, x=Zone, fill=Zone))+
+                geom_boxplot()+
+                scale_fill_brewer(palette = "Set3")
+              ggplot(resfit, aes(y=res_log, x=Position, fill=Position))+
+                geom_boxplot()+
+                scale_fill_brewer(palette = "Set3")
+              
+     p_diag <- (p_hist | p_qq) / p_fit
+p_diag
+```
+
+```{r}
+emm_Zone    <- emmeans(M5, ~ Zone)
+
+contrast_Zone <- contrast(emm_Zone, method = "pairwise" ,adjust = "tukey")
+
+table_tukey <- as.data.frame(contrast_Zone)
+```
+
