@@ -1,4 +1,4 @@
-# Effect of Shading by Floating PV on Light and Temperature in Coral Reef Ecosystem 
+# The Effect of Shading by Floating PV on Light and Temperature in a Tropical Lagoon 
 
  **Mathieu Adgé<sup>1\*</sup>, Laetitia Hédouin<sup>1</sup>, Etienne Drahi<sup>2</sup>, Serge Planes<sup>1,3</sup>**
 
